@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import { createLogger } from './lib/logger.js';
 import { launchBrowser } from './lib/browser.js';
 import * as viewturboCheckin from './tasks/viewturbo-checkin.js';
+import * as newapiCheckin from './tasks/newapi-checkin.js';
 
 dotenv.config();
 
@@ -17,7 +18,8 @@ if (nodeMajor < 18) {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HANDLERS = {
-  'viewturbo-checkin': viewturboCheckin,
+  'viewturbo-checkin': { module: viewturboCheckin, requiresBrowser: true },
+  'newapi-checkin': { module: newapiCheckin, requiresBrowser: false },
 };
 
 const STATUS_LABELS = {
@@ -41,24 +43,30 @@ function parseArgs(argv) {
   };
 }
 
+function getAccountLabel(account) {
+  return account.name || account.email || '未知账号';
+}
+
 function printAccountReport(taskName, result) {
   if (!result?.accounts) return;
 
   console.log(`\n【${taskName}】共 ${result.total} 个账号`);
 
   for (const account of result.accounts) {
-    const label = STATUS_LABELS[account.status] || account.status;
+    const label = getAccountLabel(account);
+    const statusLabel = STATUS_LABELS[account.status] || account.status;
     const checkedInNote = account.alreadyCheckedIn ? '（今日已签到）' : '';
-    console.log(`  - ${account.email}: ${label}${checkedInNote}${account.message ? ` — ${account.message}` : ''}`);
+    console.log(`  - ${label}: ${statusLabel}${checkedInNote}${account.message ? ` — ${account.message}` : ''}`);
   }
 
   if (result.failed?.length > 0) {
     console.log('\n  未签到成功的账号:');
     for (const account of result.failed) {
+      const label = getAccountLabel(account);
       if (account.alreadyCheckedIn) {
-        console.log(`    · ${account.email}: 今日已签到，无需重复操作`);
+        console.log(`    · ${label}: 今日已签到，无需重复操作`);
       } else {
-        console.log(`    · ${account.email}: 签到失败 — ${account.error || account.message || '未知原因'}`);
+        console.log(`    · ${label}: 签到失败 — ${account.error || account.message || '未知原因'}`);
       }
     }
   }
@@ -66,7 +74,8 @@ function printAccountReport(taskName, result) {
   if (result.notCheckedIn?.length > 0) {
     console.log('\n  真正未签到的账号（需关注）:');
     for (const account of result.notCheckedIn) {
-      console.log(`    · ${account.email}: ${account.error || account.message || '签到未完成'}`);
+      const label = getAccountLabel(account);
+      console.log(`    · ${label}: ${account.error || account.message || '签到未完成'}`);
     }
   } else if (result.allOk) {
     console.log('\n  所有账号均已处理完成（含今日已签到）。');
@@ -101,12 +110,14 @@ export async function runAll(options = {}) {
 
   log.info('开始执行任务', { count: filtered.length, tasks: filtered.map((t) => t.id) });
 
-  const browser = await launchBrowser({ headed: options.headed });
+  const needsBrowser = filtered.some((task) => HANDLERS[task.handler]?.requiresBrowser);
+  const browser = needsBrowser ? await launchBrowser({ headed: options.headed }) : null;
   const results = [];
 
   try {
     for (const task of filtered) {
-      const handler = HANDLERS[task.handler];
+      const handlerEntry = HANDLERS[task.handler];
+      const handler = handlerEntry?.module;
       if (!handler?.run) {
         throw new Error(`未找到任务处理器: ${task.handler}`);
       }
@@ -125,9 +136,9 @@ export async function runAll(options = {}) {
             failed: result.failedCount,
           });
         } else {
-          const emails = (result.notCheckedIn || []).map((a) => a.email).join(', ');
+          const labels = (result.notCheckedIn || []).map((a) => a.name || a.email).join(', ');
           log.error(`任务未全部成功: ${task.name}`, {
-            notCheckedIn: emails,
+            notCheckedIn: labels,
             failed: result.failedCount,
           });
         }
@@ -142,7 +153,9 @@ export async function runAll(options = {}) {
       }
     }
   } finally {
-    await browser.close();
+    if (browser) {
+      await browser.close();
+    }
   }
 
   printSummary(results);
@@ -150,7 +163,7 @@ export async function runAll(options = {}) {
   const failed = results.filter((r) => !r.ok);
   if (failed.length > 0) {
     const details = failed.map((f) => {
-      const notCheckedIn = f.result?.notCheckedIn?.map((a) => a.email).join(', ');
+      const notCheckedIn = f.result?.notCheckedIn?.map((a) => a.name || a.email).join(', ');
       return notCheckedIn ? `${f.id}（未签到: ${notCheckedIn}）` : f.id;
     });
     throw new Error(`${failed.length} 个任务未全部成功: ${details.join('; ')}`);

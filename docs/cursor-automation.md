@@ -15,8 +15,8 @@
 
 | 字段 | 填写内容 |
 |------|----------|
-| 名称 | `每日网页任务` |
-| 描述 | `每天 9:00 自动执行 ViewTurbo 签到等网页任务` |
+| 名称 | `每日签到任务` |
+| 描述 | `每天 9:00 自动执行 tasks.yaml 中启用的签到任务` |
 
 ### 3. 关联 Git 仓库（Cron 必做，否则易报 Failed to create automation）
 
@@ -44,8 +44,13 @@
 
 | 变量名 | 值 | 说明 |
 |--------|-----|------|
-| `VIEWTURBO_EMAIL` | 你的 ViewTurbo 邮箱 | 不要写进代码仓库 |
+| `NEWAPI_ACCOUNTS` | `[{"name":"7r.fit","url":"https://api.7r.fit","session":"..."}]` | New API 站点 Cookie 签到（按 tasks.yaml 启用） |
+| `NEWAPI_URL` | `https://api.7r.fit` | 单站点简写（与 `NEWAPI_SESSION` 配合） |
+| `NEWAPI_SESSION` | 你的 session 值 | 单站点简写 |
+| `VIEWTURBO_EMAIL` | 你的 ViewTurbo 邮箱 | 启用 viewturbo-checkin 时使用 |
 | `VIEWTURBO_PASSWORD` | 你的 ViewTurbo 密码 | 勾选 Secret 类型 |
+
+> 仅启用 HTTP 签到任务时，可不配置 ViewTurbo 相关变量；但 Prompt 中仍建议保留 Playwright 安装步骤，以便后续启用浏览器任务。
 
 ### 6. Agent 执行指令（Prompt）
 
@@ -59,8 +64,8 @@
 3. npm run tasks
 
 要求：
-- 使用已配置的 VIEWTURBO_EMAIL / VIEWTURBO_PASSWORD 环境变量
-- 执行完成后用中文简要汇报每个任务结果（成功 / 已签到 / 失败原因）
+- 使用已配置的 NEWAPI_ACCOUNTS（Cookie 签到）和 VIEWTURBO_*（浏览器签到）
+- 按 tasks.yaml 中 enabled 的任务汇报：签到成功 / 今日已签到 / 失败原因
 - 若 npm run tasks 退出码非 0，说明失败任务与日志路径 logs/
 - 不要修改 tasks.yaml 或业务代码，除非任务明确失败且需要修复
 ```
@@ -82,7 +87,7 @@
 
 ### 方式 A：手动立即运行（推荐，最快）
 
-1. 打开刚创建的 **每日网页任务** Automation
+1. 打开刚创建的 **每日签到任务** Automation
 2. 找到 **Run now** / **Test** / **手动运行** 按钮（不同版本文案可能略有差异）
 3. 点击后等待 Cloud Agent 执行完成
 4. 在 **Runs** / **运行记录** 中查看日志
@@ -91,7 +96,7 @@
 
 ```json
 {
-  "id": "viewturbo-checkin",
+  "id": "api-7r-fit-checkin",
   "ok": true,
   "result": {
     "status": "success",
@@ -119,14 +124,15 @@
 
 ### 方式 C：本地先跑通脚本（验证代码，不经过 Cursor）
 
-在本机升级 Node 18+ 后：
+在本机 Node 18+ 后：
 
 ```powershell
 cd e:\workspace_front\day-task
 npm install
-npm run install:browsers
 npm run tasks
 ```
+
+> 仅 HTTP 签到任务无需 `npm run install:browsers`；若启用了 ViewTurbo，则需安装 Chromium。
 
 本地跑通只说明 **脚本没问题**；Cursor 云端是否成功还要看 Secrets 和 Cloud Agent 环境。
 
@@ -138,7 +144,8 @@ npm run tasks
 
 - [ ] 仓库为 `qianjunjian/day-task`，分支 `main`
 - [ ] Cron 为 `0 9 * * *`
-- [ ] 已配置 `VIEWTURBO_EMAIL`、`VIEWTURBO_PASSWORD` Secrets
+- [ ] 已配置 `NEWAPI_ACCOUNTS` 或 `NEWAPI_URL` + `NEWAPI_SESSION`
+- [ ] 若启用 ViewTurbo，已配置 `VIEWTURBO_EMAIL`、`VIEWTURBO_PASSWORD`
 - [ ] Prompt 包含 `npm ci` + `playwright install` + `npm run tasks`
 - [ ] Automation 已 **Enabled**
 - [ ] 已用 **Run now** 手动测试至少一次
@@ -150,8 +157,9 @@ npm run tasks
 | 现象 | 原因与处理 |
 |------|------------|
 | 找不到仓库 | GitHub 未授权或仓库未 push |
-| 登录失败 | Secrets 中邮箱密码错误 |
-| Playwright 报错 | Prompt 里缺少 `npx playwright install chromium --with-deps` |
+| Session 已过期 | 重新登录站点，更新 `NEWAPI_ACCOUNTS` 中的 session |
+| 未配置站点账号 | `NEWAPI_ACCOUNTS` 中 url 需与 `tasks.yaml` 的 `baseUrl` 一致 |
+| Playwright 报错 | Prompt 里缺少 `npx playwright install chromium --with-deps`（仅浏览器任务需要） |
 | 今日已签到 | 正常，`already_checked_in` 不是失败 |
 | Run now 无反应 | 检查 Cloud Agents 额度与 Enabled 开关 |
 | 时区不对 | 在 Automation 界面确认 Cron 显示的时区 |
@@ -162,4 +170,5 @@ npm run tasks
 
 - 预填配置 JSON：[`automation-prefill.json`](./automation-prefill.json)（供对照，不能代替 UI 保存）
 - 任务列表：[`tasks.yaml`](../tasks.yaml)
-- 签到逻辑：[`src/tasks/viewturbo-checkin.js`](../src/tasks/viewturbo-checkin.js)
+- New API 签到：[`src/tasks/newapi-checkin.js`](../src/tasks/newapi-checkin.js)
+- ViewTurbo 签到：[`src/tasks/viewturbo-checkin.js`](../src/tasks/viewturbo-checkin.js)

@@ -1,8 +1,18 @@
 # 每日任务列表，按顺序执行
 tasks:
+  - id: api-7r-fit-checkin
+    name: 7r.fit 每日签到
+    enabled: true
+    handler: newapi-checkin
+    config:
+      baseUrl: https://api.7r.fit
+      signInPath: /api/user/sign_in
+      userInfoPath: /api/user/self
+      apiUserHeader: new-api-user
+
   - id: viewturbo-checkin
     name: ViewTurbo 每日签到
-    enabled: true
+    enabled: false
     handler: viewturbo-checkin
     config:
       baseUrl: https://web.viewturbo.net
