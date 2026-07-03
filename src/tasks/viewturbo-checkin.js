@@ -54,12 +54,25 @@ async function ensureLoggedIn(page, config, account, log) {
   }
 }
 
+function isAlreadyCheckedIn(btnText, isCheckedClass) {
+  return isCheckedClass || /已签到|明日再来|已完成|今日已领/.test(btnText);
+}
+
+async function findCheckinButton(page) {
+  const primary = page.locator('button.my-checkin-entry');
+  if (await primary.isVisible({ timeout: 3000 }).catch(() => false)) {
+    return primary;
+  }
+  return page.getByRole('button', { name: /签到领|今日已领/ });
+}
+
 async function clickCheckin(page, log, email) {
-  const checkinBtn = page.getByRole('button', { name: /签到领/ });
+  const checkinBtn = await findCheckinButton(page);
   await checkinBtn.waitFor({ state: 'visible', timeout: 15000 });
 
   const btnText = await checkinBtn.innerText();
-  if (/已签到|明日再来|已完成/.test(btnText)) {
+  const isCheckedClass = await checkinBtn.evaluate((el) => el.classList.contains('is-checked')).catch(() => false);
+  if (isAlreadyCheckedIn(btnText, isCheckedClass)) {
     log.info('今日已签到，跳过', { email, btnText });
     return { status: 'already_checked_in', message: btnText, alreadyCheckedIn: true };
   }
@@ -69,8 +82,9 @@ async function clickCheckin(page, log, email) {
 
   const afterText = await checkinBtn.innerText().catch(() => btnText);
   const trafficText = await page.locator('h2').first().innerText().catch(() => '');
+  const afterCheckedClass = await checkinBtn.evaluate((el) => el.classList.contains('is-checked')).catch(() => false);
 
-  if (/已签到|明日再来|已完成/.test(afterText)) {
+  if (isAlreadyCheckedIn(afterText, afterCheckedClass)) {
     log.info('签到成功', { email, afterText, trafficText });
     return { status: 'success', message: afterText, trafficText, alreadyCheckedIn: false };
   }
