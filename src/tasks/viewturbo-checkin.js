@@ -12,10 +12,23 @@ function requireEnv(name) {
 }
 
 async function dismissCookieDialog(page) {
+  const acceptBtn = page.getByText('接受所有 Cookies');
   const closeBtn = page.getByRole('button', { name: 'close' });
-  if (await closeBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-    await closeBtn.click();
+  const deadline = Date.now() + 10000;
+
+  while (Date.now() < deadline) {
+    if (await acceptBtn.isVisible().catch(() => false)) {
+      await acceptBtn.click();
+      break;
+    }
+    if (await closeBtn.isVisible().catch(() => false)) {
+      await closeBtn.click();
+      break;
+    }
+    await page.waitForTimeout(500);
   }
+
+  await page.locator('.exec-modal-overlay').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
 }
 
 async function login(page, config, log) {
@@ -29,7 +42,8 @@ async function login(page, config, log) {
 
   await page.getByPlaceholder('输入您的电子邮件').fill(email);
   await page.getByPlaceholder('输入您的密码').fill(password);
-  await page.getByPlaceholder('输入您的密码').press('Enter');
+  await dismissCookieDialog(page);
+  await page.locator('.active-button.button', { hasText: '登入' }).click();
 
   await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 30000 });
   log.info('登录成功', { url: page.url() });
@@ -45,6 +59,7 @@ async function ensureLoggedIn(page, config, log) {
     log.info('会话已失效，重新登录');
     await login(page, config, log);
     await page.goto(myUrl, { waitUntil: 'domcontentloaded' });
+    await dismissCookieDialog(page);
   }
 }
 
