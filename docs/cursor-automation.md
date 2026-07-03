@@ -18,14 +18,19 @@
 | 名称 | `每日网页任务` |
 | 描述 | `每天 9:00 自动执行 ViewTurbo 签到等网页任务` |
 
-### 3. 关联 Git 仓库
+### 3. 关联 Git 仓库（Cron 必做，否则易报 Failed to create automation）
+
+> **重要：** Cron 定时触发器**默认不绑定仓库**。必须手动选择，否则无法执行 `npm run tasks`。
 
 | 字段 | 填写内容 |
 |------|----------|
+| Repository 模式 | **Single repository**（单仓库，不要选 No repository） |
 | Repository | `qianjunjian/day-task` |
 | Branch | `main` |
 
-> 若列表里找不到仓库，先在 Cursor / GitHub 中授权 GitHub 账号，并确认仓库已 push。
+**先连接 GitHub：** [Dashboard → Integrations](https://cursor.com/dashboard?tab=integrations) → 安装 Cursor GitHub App → 授权 `day-task` 仓库。
+
+> 若列表里找不到仓库，先在 Integrations 中授权 GitHub 并勾选该仓库。
 
 ### 4. 设置触发器（定时）
 

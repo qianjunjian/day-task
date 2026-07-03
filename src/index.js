@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import YAML from 'yaml';
 import dotenv from 'dotenv';
 import { createLogger } from './lib/logger.js';
-import { launchBrowser, createContext } from './lib/browser.js';
+import { launchBrowser } from './lib/browser.js';
 import * as viewturboCheckin from './tasks/viewturbo-checkin.js';
 
 dotenv.config();
@@ -20,6 +20,13 @@ const HANDLERS = {
   'viewturbo-checkin': viewturboCheckin,
 };
 
+const STATUS_LABELS = {
+  success: '签到成功',
+  already_checked_in: '今日已签到',
+  clicked: '已点击（待确认）',
+  error: '执行失败',
+};
+
 function loadTasks() {
   const configPath = path.join(__dirname, '..', 'tasks.yaml');
   const raw = fs.readFileSync(configPath, 'utf8');
@@ -32,6 +39,55 @@ function parseArgs(argv) {
     headed: argv.includes('--headed'),
     only: argv.find((arg, i) => argv[i - 1] === '--only'),
   };
+}
+
+function printAccountReport(taskName, result) {
+  if (!result?.accounts) return;
+
+  console.log(`\n【${taskName}】共 ${result.total} 个账号`);
+
+  for (const account of result.accounts) {
+    const label = STATUS_LABELS[account.status] || account.status;
+    const checkedInNote = account.alreadyCheckedIn ? '（今日已签到）' : '';
+    console.log(`  - ${account.email}: ${label}${checkedInNote}${account.message ? ` — ${account.message}` : ''}`);
+  }
+
+  if (result.failed?.length > 0) {
+    console.log('\n  未签到成功的账号:');
+    for (const account of result.failed) {
+      if (account.alreadyCheckedIn) {
+        console.log(`    · ${account.email}: 今日已签到，无需重复操作`);
+      } else {
+        console.log(`    · ${account.email}: 签到失败 — ${account.error || account.message || '未知原因'}`);
+      }
+    }
+  }
+
+  if (result.notCheckedIn?.length > 0) {
+    console.log('\n  真正未签到的账号（需关注）:');
+    for (const account of result.notCheckedIn) {
+      console.log(`    · ${account.email}: ${account.error || account.message || '签到未完成'}`);
+    }
+  } else if (result.allOk) {
+    console.log('\n  所有账号均已处理完成（含今日已签到）。');
+  }
+}
+
+function printSummary(results) {
+  console.log('\n========== 任务执行汇总 ==========');
+  for (const item of results) {
+    const title = item.name || item.id;
+    if (!item.ok) {
+      if (item.result) {
+        printAccountReport(title, item.result);
+      } else {
+        console.log(`\n【${title}】失败: ${item.error}`);
+      }
+      continue;
+    }
+    printAccountReport(title, item.result);
+  }
+  console.log('\n==================================');
 }
 
 export async function runAll(options = {}) {
@@ -56,28 +112,48 @@ export async function runAll(options = {}) {
       }
 
       log.info(`执行任务: ${task.name}`, { id: task.id });
-      const context = await createContext(browser, { siteId: task.id.split('-')[0] });
-      const page = await context.newPage();
 
       try {
-        const result = await handler.run({ page, context, config: task.config || {} });
-        results.push({ id: task.id, ok: true, result });
-        log.info(`任务完成: ${task.name}`, result);
+        const result = await handler.run({ browser, config: task.config || {} });
+        const taskOk = result.allOk !== false;
+        results.push({ id: task.id, name: task.name, ok: taskOk, result });
+        if (taskOk) {
+          log.info(`任务完成: ${task.name}`, {
+            total: result.total,
+            success: result.successCount,
+            alreadyCheckedIn: result.alreadyCheckedInCount,
+            failed: result.failedCount,
+          });
+        } else {
+          const emails = (result.notCheckedIn || []).map((a) => a.email).join(', ');
+          log.error(`任务未全部成功: ${task.name}`, {
+            notCheckedIn: emails,
+            failed: result.failedCount,
+          });
+        }
       } catch (error) {
-        results.push({ id: task.id, ok: false, error: error.message });
+        results.push({
+          id: task.id,
+          name: task.name,
+          ok: false,
+          error: error.message,
+        });
         log.error(`任务失败: ${task.name}`, { error: error.message });
-      } finally {
-        await page.close();
-        await context.close();
       }
     }
   } finally {
     await browser.close();
   }
 
+  printSummary(results);
+
   const failed = results.filter((r) => !r.ok);
   if (failed.length > 0) {
-    throw new Error(`${failed.length} 个任务失败: ${failed.map((f) => f.id).join(', ')}`);
+    const details = failed.map((f) => {
+      const notCheckedIn = f.result?.notCheckedIn?.map((a) => a.email).join(', ');
+      return notCheckedIn ? `${f.id}（未签到: ${notCheckedIn}）` : f.id;
+    });
+    throw new Error(`${failed.length} 个任务未全部成功: ${details.join('; ')}`);
   }
 
   return results;
@@ -89,8 +165,7 @@ if (isDirectRun) {
   const args = parseArgs(process.argv.slice(2));
   runAll(args)
     .then((results) => {
-      console.log('\n全部任务执行完成:');
-      console.log(JSON.stringify(results, null, 2));
+      console.log('\n全部任务执行完成。');
       process.exit(0);
     })
     .catch((error) => {

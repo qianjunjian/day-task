@@ -13,16 +13,17 @@ export async function launchBrowser({ headed = false } = {}) {
   });
 }
 
-export function getStoragePath(siteId) {
-  return path.join(AUTH_DIR, `${siteId}.json`);
+export function getStoragePath(siteId, accountKey) {
+  const name = accountKey ? `${siteId}-${accountKey}` : siteId;
+  return path.join(AUTH_DIR, `${name}.json`);
 }
 
-export function storageExists(siteId) {
-  return fs.existsSync(getStoragePath(siteId));
+export function storageExists(siteId, accountKey) {
+  return fs.existsSync(getStoragePath(siteId, accountKey));
 }
 
-export async function createContext(browser, { siteId, storagePath } = {}) {
-  const resolvedPath = storagePath || (siteId ? getStoragePath(siteId) : null);
+export async function createContext(browser, { siteId, accountKey, storagePath } = {}) {
+  const resolvedPath = storagePath || (siteId ? getStoragePath(siteId, accountKey) : null);
   const options = {
     locale: 'zh-CN',
     viewport: { width: 1280, height: 800 },
@@ -32,16 +33,22 @@ export async function createContext(browser, { siteId, storagePath } = {}) {
 
   if (resolvedPath && fs.existsSync(resolvedPath)) {
     options.storageState = resolvedPath;
+  } else if (resolvedPath && accountKey && siteId) {
+    const legacyPath = path.join(AUTH_DIR, `${siteId}.json`);
+    if (fs.existsSync(legacyPath)) {
+      fs.copyFileSync(legacyPath, resolvedPath);
+      options.storageState = resolvedPath;
+    }
   }
 
   return browser.newContext(options);
 }
 
-export async function saveStorageState(context, siteId) {
+export async function saveStorageState(context, siteId, accountKey) {
   if (!fs.existsSync(AUTH_DIR)) {
     fs.mkdirSync(AUTH_DIR, { recursive: true });
   }
-  const storagePath = getStoragePath(siteId);
+  const storagePath = getStoragePath(siteId, accountKey);
   await context.storageState({ path: storagePath });
   return storagePath;
 }

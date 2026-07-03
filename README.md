@@ -18,12 +18,24 @@ npm run install:browsers
 
 ### 3. 配置账号
 
-复制 `.env.example` 为 `.env` 并填写：
+复制 `.env.example` 为 `.env` 并填写。
+
+**单账号：**
 
 ```env
 VIEWTURBO_EMAIL=your@email.com
 VIEWTURBO_PASSWORD=your_password
 ```
+
+**多账号（推荐）：**
+
+```env
+VIEWTURBO_ACCOUNTS=[{"email":"user1@example.com","password":"pass1"},{"email":"user2@example.com","password":"pass2"}]
+```
+
+也可同时保留 `VIEWTURBO_EMAIL` / `VIEWTURBO_PASSWORD`，会与 `VIEWTURBO_ACCOUNTS` 合并（相同邮箱自动去重）。
+
+执行完成后会按账号汇报：签到成功、今日已签到、或真正未签到（含失败原因）。
 
 > `.env` 已在 `.gitignore` 中，请勿提交到 Git。
 
@@ -70,7 +82,7 @@ tasks:
 
 1. 在 Cursor 中打开 **Automations** → 新建
 2. 触发器：**Cron** → `0 9 * * *`（每天 9:00）
-3. 关联本仓库，并在 Automation 环境变量中配置 `VIEWTURBO_EMAIL`、`VIEWTURBO_PASSWORD`
+3. 关联本仓库，并在 Automation 环境变量中配置 `VIEWTURBO_ACCOUNTS`（多账号 JSON）或 `VIEWTURBO_EMAIL`、`VIEWTURBO_PASSWORD`
 4. Agent 指令示例：
 
 ```
@@ -78,7 +90,7 @@ tasks:
 1. npm ci
 2. npx playwright install chromium --with-deps
 3. npm run tasks
-执行完成后汇报每个任务的签到结果；若失败说明原因。
+执行完成后汇报每个任务的签到结果；按账号说明成功、今日已签到、或未签到成功（区分是否已签到）。
 ```
 
 ## 日志
