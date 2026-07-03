@@ -12,10 +12,18 @@ function requireEnv(name) {
 }
 
 async function dismissCookieDialog(page) {
+  const acceptBtn = page.getByText('接受所有 Cookies');
   const closeBtn = page.getByRole('button', { name: 'close' });
-  if (await closeBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+
+  if (await acceptBtn.isVisible({ timeout: 8000 }).catch(() => false)) {
+    await acceptBtn.click();
+  } else if (await closeBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
     await closeBtn.click();
+  } else {
+    return;
   }
+
+  await page.locator('.exec-modal-overlay').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
 }
 
 async function login(page, config, log) {
@@ -29,7 +37,7 @@ async function login(page, config, log) {
 
   await page.getByPlaceholder('输入您的电子邮件').fill(email);
   await page.getByPlaceholder('输入您的密码').fill(password);
-  await page.getByPlaceholder('输入您的密码').press('Enter');
+  await page.locator('.active-button.button', { hasText: '登入' }).click();
 
   await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 30000 });
   log.info('登录成功', { url: page.url() });
