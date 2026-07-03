@@ -23,7 +23,7 @@ const HANDLERS = {
 const STATUS_LABELS = {
   success: '签到成功',
   already_checked_in: '今日已签到',
-  clicked: '已点击（待确认）',
+  failed: '签到失败',
   error: '执行失败',
 };
 

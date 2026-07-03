@@ -54,34 +54,78 @@ async function ensureLoggedIn(page, config, account, log) {
   }
 }
 
+const CHECKED_TEXT_PATTERN = /已签到|明日再来|已完成/;
+
+async function waitForCheckinArea(page) {
+  await page.locator('.my-checkin-entry').first().waitFor({ state: 'visible', timeout: 15000 });
+}
+
+/**
+ * 点击签到前检测是否已签到（优先看 my-checkin-entry.is-checked 及区域文案）
+ */
+async function detectAlreadyCheckedIn(page) {
+  await waitForCheckinArea(page);
+
+  const checkedEntry = page.locator('.my-checkin-entry.is-checked').first();
+  const isCheckedClass = await checkedEntry.isVisible().catch(() => false);
+
+  const entry = page.locator('.my-checkin-entry').first();
+  const entryText = (await entry.innerText().catch(() => '')).trim();
+
+  const checkinBtn = page.getByRole('button', { name: /签到领/ });
+  const btnVisible = await checkinBtn.isVisible().catch(() => false);
+  const btnText = btnVisible ? (await checkinBtn.innerText().catch(() => '')).trim() : '';
+
+  const hasCheckedText = CHECKED_TEXT_PATTERN.test(entryText) || CHECKED_TEXT_PATTERN.test(btnText);
+  const alreadyCheckedIn = isCheckedClass || hasCheckedText;
+
+  return { alreadyCheckedIn, isCheckedClass, entryText, btnText };
+}
+
 async function clickCheckin(page, log, email) {
+  const before = await detectAlreadyCheckedIn(page);
+
+  if (before.alreadyCheckedIn) {
+    const message = before.entryText || before.btnText || '已签到';
+    log.info('今日已签到，跳过点击', {
+      email,
+      isCheckedClass: before.isCheckedClass,
+      entryText: before.entryText,
+      btnText: before.btnText,
+    });
+    return { status: 'already_checked_in', message, alreadyCheckedIn: true };
+  }
+
   const checkinBtn = page.getByRole('button', { name: /签到领/ });
   await checkinBtn.waitFor({ state: 'visible', timeout: 15000 });
 
-  const btnText = await checkinBtn.innerText();
-  if (/已签到|明日再来|已完成/.test(btnText)) {
-    log.info('今日已签到，跳过', { email, btnText });
-    return { status: 'already_checked_in', message: btnText, alreadyCheckedIn: true };
-  }
-
+  const btnText = before.btnText || (await checkinBtn.innerText());
   await checkinBtn.click();
   await page.waitForTimeout(2000);
 
-  const afterText = await checkinBtn.innerText().catch(() => btnText);
+  const after = await detectAlreadyCheckedIn(page);
   const trafficText = await page.locator('h2').first().innerText().catch(() => '');
 
-  if (/已签到|明日再来|已完成/.test(afterText)) {
-    log.info('签到成功', { email, afterText, trafficText });
-    return { status: 'success', message: afterText, trafficText, alreadyCheckedIn: false };
+  if (after.alreadyCheckedIn) {
+    const message = after.entryText || after.btnText || btnText;
+    log.info('签到成功', {
+      email,
+      isCheckedClass: after.isCheckedClass,
+      message,
+      trafficText,
+    });
+    return { status: 'success', message, trafficText, alreadyCheckedIn: false };
   }
 
-  log.warn('已点击签到按钮，结果待确认', { email, before: btnText, after: afterText, trafficText });
-  return { status: 'clicked', message: afterText, trafficText, alreadyCheckedIn: false };
+  const afterText = after.btnText || (await checkinBtn.innerText().catch(() => btnText));
+  const message = `签到未完成（点击后未出现已签到状态）${afterText ? ` — ${afterText}` : ''}`;
+  log.error('签到失败', { email, before: btnText, after: afterText, trafficText });
+  return { status: 'failed', message, trafficText, alreadyCheckedIn: false };
 }
 
 function buildAccountResult(email, checkinResult) {
   const { status, message, trafficText, alreadyCheckedIn } = checkinResult;
-  const ok = status === 'success' || status === 'already_checked_in' || status === 'clicked';
+  const ok = status === 'success' || status === 'already_checked_in';
 
   return {
     email,
@@ -107,7 +151,6 @@ function buildAccountError(email, error) {
 function summarizeAccountResults(accounts) {
   const success = accounts.filter((a) => a.status === 'success');
   const alreadyCheckedIn = accounts.filter((a) => a.status === 'already_checked_in');
-  const clicked = accounts.filter((a) => a.status === 'clicked');
   const failed = accounts.filter((a) => !a.ok);
 
   const notCheckedIn = failed.filter((a) => !a.alreadyCheckedIn);
@@ -116,11 +159,9 @@ function summarizeAccountResults(accounts) {
     total: accounts.length,
     successCount: success.length,
     alreadyCheckedInCount: alreadyCheckedIn.length,
-    clickedCount: clicked.length,
     failedCount: failed.length,
     success,
     alreadyCheckedIn,
-    clicked,
     failed,
     notCheckedIn,
     allOk: failed.length === 0,

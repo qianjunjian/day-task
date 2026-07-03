@@ -101,3 +101,22 @@ tasks:
 
 - 不要在聊天、Issue 或 PR 中明文发送密码
 - 优先使用 Cursor Automation / CI 的 Secret 环境变量，而非把 `.env` 提交到仓库
+
+## agent提示词
+你是每日任务执行器。在本仓库根目录依次执行：
+1. npm ci
+2. npx playwright install chromium --with-deps
+3. npm run tasks
+要求：
+- 使用已配置的环境变量（多账号用 VIEWTURBO_ACCOUNTS JSON 数组；单账号用 VIEWTURBO_EMAIL + VIEWTURBO_PASSWORD）
+- 执行完成后用中文按账号汇报签到结果：签到成功、今日已签到、或真正未签到（含失败原因）
+- 若有账号未签到成功，明确列出邮箱，并说明是「今日已签到」还是「签到失败」
+- 若 npm run tasks 退出码非 0，说明失败账号与日志路径 logs/
+- 不要修改 tasks.yaml 或业务代码，除非任务明确失败且需要修复
+
+ViewTurbo 已知问题
+- Cookie 同意弹窗（`exec-modal-overlay`）异步出现，会遮挡登录按钮
+- 登录按钮是 `div.active-button.button`，不是 `<button>`
+- 修复：轮询等待并接受 Cookies，登录前再次 dismiss，点击 div 登入按钮
+
+
