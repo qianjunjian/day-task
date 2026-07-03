@@ -64,7 +64,7 @@ tasks:
 
 ## 每天早上 9 点自动执行（Cursor Automations）
 
-详见 [`docs/cursor-automation.md`](docs/cursor-automation.md)。
+**完整图文步骤与测试方法见：** [`docs/cursor-automation.md`](docs/cursor-automation.md)
 
 简要步骤：
 

@@ -1,0 +1,26 @@
+{
+  "name": "每日网页任务",
+  "description": "每天 9:00 自动执行 ViewTurbo 签到等 tasks.yaml 中的网页任务",
+  "workflow": {
+    "triggers": [
+      {
+        "cron": {
+          "cron": "0 9 * * *"
+        }
+      }
+    ],
+    "actions": [],
+    "prompts": [
+      "你是每日任务执行器。在本仓库根目录依次执行：\n\n1. npm ci\n2. npx playwright install chromium --with-deps\n3. npm run tasks\n\n要求：\n- 使用已配置的 VIEWTURBO_EMAIL / VIEWTURBO_PASSWORD 环境变量\n- 执行完成后用中文简要汇报每个任务结果（成功 / 已签到 / 失败原因）\n- 若 npm run tasks 退出码非 0，说明失败任务与日志路径 logs/\n- 不要修改 tasks.yaml 或业务代码，除非任务明确失败且需要修复"
+    ],
+    "model": "",
+    "agentOptions": {
+      "skipInstall": false
+    },
+    "memoryEnabled": true,
+    "gitConfig": {
+      "repo": "qianjunjian/day-task",
+      "branch": "main"
+    }
+  }
+}

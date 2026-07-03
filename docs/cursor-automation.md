@@ -1,28 +1,50 @@
-# Cursor Automations 定时配置指南
+# Cursor Automations 配置与测试指南
 
-本仓库设计为在 **Cursor Automations** 中每天 9:00 自动执行 `npm run tasks`。
+仓库：[qianjunjian/day-task](https://github.com/qianjunjian/day-task)
 
-## 推荐 Automation 配置
+---
 
-| 项目 | 值 |
-|------|-----|
-| 名称 | 每日网页任务 |
-| 描述 | 自动执行 ViewTurbo 签到等配置的网页任务 |
-| 触发器 | Cron：`0 9 * * *`（每天上午 9:00，按 Cursor 显示的时区） |
-| 仓库 | 本 `day-task` 仓库 |
+## 一、创建 Automation（约 5 分钟）
 
-## 环境变量（Secrets）
+### 1. 打开 Automations
 
-在 Automation 编辑器中为以下变量配置 Secret（不要写入代码仓库）：
+1. 在 Cursor 左侧边栏点击 **Automations**（或通过命令面板搜索 `Automations`）
+2. 点击 **New Automation** / **新建**
 
-| 变量名 | 说明 |
-|--------|------|
-| `VIEWTURBO_EMAIL` | ViewTurbo 登录邮箱 |
-| `VIEWTURBO_PASSWORD` | ViewTurbo 登录密码 |
+### 2. 基本信息
 
-## Agent 执行指令（Prompt）
+| 字段 | 填写内容 |
+|------|----------|
+| 名称 | `每日网页任务` |
+| 描述 | `每天 9:00 自动执行 ViewTurbo 签到等网页任务` |
 
-将以下内容作为 Automation 的 Agent 指令：
+### 3. 关联 Git 仓库
+
+| 字段 | 填写内容 |
+|------|----------|
+| Repository | `qianjunjian/day-task` |
+| Branch | `main` |
+
+> 若列表里找不到仓库，先在 Cursor / GitHub 中授权 GitHub 账号，并确认仓库已 push。
+
+### 4. 设置触发器（定时）
+
+- 类型：**Schedule / Cron**
+- Cron 表达式：`0 9 * * *`
+- 含义：每天上午 **9:00**（以 Cursor 界面显示的时区为准，一般为你的本地时区）
+
+### 5. 配置 Secrets（环境变量）
+
+在 Automation 编辑器的 **Secrets** 或 **Environment variables** 中添加：
+
+| 变量名 | 值 | 说明 |
+|--------|-----|------|
+| `VIEWTURBO_EMAIL` | 你的 ViewTurbo 邮箱 | 不要写进代码仓库 |
+| `VIEWTURBO_PASSWORD` | 你的 ViewTurbo 密码 | 勾选 Secret 类型 |
+
+### 6. Agent 执行指令（Prompt）
+
+将下面整段复制到 Automation 的 **Instructions / Prompt** 框：
 
 ```text
 你是每日任务执行器。在本仓库根目录依次执行：
@@ -38,29 +60,101 @@
 - 不要修改 tasks.yaml 或业务代码，除非任务明确失败且需要修复
 ```
 
-## 扩展更多网站
+### 7. 运行环境
 
-1. 在 `src/tasks/` 新增任务模块
-2. 在 `tasks.yaml` 增加 `enabled: true` 的条目
-3. 如需新账号，在 Automation Secrets 中增加对应 `XXX_EMAIL` / `XXX_PASSWORD`
-4. 无需修改 Cron；一次 Automation 会顺序执行 `tasks.yaml` 中所有启用任务
+- 选择 **Cloud Agent**（云端运行，无需本机开机）
+- 确认已开启 Cloud Agents（[Cursor Dashboard → Cloud Agents](https://cursor.com/dashboard?tab=cloud-agents)）
 
-## 本地 Windows 备选方案
+### 8. 保存并启用
 
-若不想使用 Cursor Cloud，可在本机用「任务计划程序」每天 9:00 运行：
+点击 **Save**，然后打开 **Enabled** 开关。
+
+---
+
+## 二、如何测试
+
+有三种测试方式，推荐按顺序做。
+
+### 方式 A：手动立即运行（推荐，最快）
+
+1. 打开刚创建的 **每日网页任务** Automation
+2. 找到 **Run now** / **Test** / **手动运行** 按钮（不同版本文案可能略有差异）
+3. 点击后等待 Cloud Agent 执行完成
+4. 在 **Runs** / **运行记录** 中查看日志
+
+**预期成功结果示例：**
+
+```json
+{
+  "id": "viewturbo-checkin",
+  "ok": true,
+  "result": {
+    "status": "success",
+    "message": "..."
+  }
+}
+```
+
+或今日已签到时：
+
+```json
+{
+  "status": "already_checked_in",
+  "message": "..."
+}
+```
+
+### 方式 B：临时改 Cron 测定时触发
+
+1. 把 Cron 临时改为 **2 分钟后** 会触发的时间  
+   例如当前 10:05，可设为 `7 10 * * *`（10:07 触发）
+2. 保存并等待自动触发
+3. 在 **Runs** 里确认有新一轮执行
+4. 测试通过后改回 `0 9 * * *`
+
+### 方式 C：本地先跑通脚本（验证代码，不经过 Cursor）
+
+在本机升级 Node 18+ 后：
 
 ```powershell
 cd e:\workspace_front\day-task
+npm install
+npm run install:browsers
 npm run tasks
 ```
 
-前提：电脑 9:00 处于开机状态。
+本地跑通只说明 **脚本没问题**；Cursor 云端是否成功还要看 Secrets 和 Cloud Agent 环境。
 
-## 故障排查
+---
 
-| 现象 | 处理 |
-|------|------|
-| 登录失败 | 检查 Secret 中邮箱密码是否正确 |
-| Playwright 浏览器缺失 | 确保 Automation 指令包含 `npx playwright install chromium --with-deps` |
-| 今日已签到 | 正常，脚本会跳过并记录 `already_checked_in` |
-| Node 版本过低 | 本地需 Node 18+；Cloud Agent 通常已满足 |
+## 三、检查清单
+
+保存 Automation 前确认：
+
+- [ ] 仓库为 `qianjunjian/day-task`，分支 `main`
+- [ ] Cron 为 `0 9 * * *`
+- [ ] 已配置 `VIEWTURBO_EMAIL`、`VIEWTURBO_PASSWORD` Secrets
+- [ ] Prompt 包含 `npm ci` + `playwright install` + `npm run tasks`
+- [ ] Automation 已 **Enabled**
+- [ ] 已用 **Run now** 手动测试至少一次
+
+---
+
+## 四、常见问题
+
+| 现象 | 原因与处理 |
+|------|------------|
+| 找不到仓库 | GitHub 未授权或仓库未 push |
+| 登录失败 | Secrets 中邮箱密码错误 |
+| Playwright 报错 | Prompt 里缺少 `npx playwright install chromium --with-deps` |
+| 今日已签到 | 正常，`already_checked_in` 不是失败 |
+| Run now 无反应 | 检查 Cloud Agents 额度与 Enabled 开关 |
+| 时区不对 | 在 Automation 界面确认 Cron 显示的时区 |
+
+---
+
+## 五、参考文件
+
+- 预填配置 JSON：[`automation-prefill.json`](./automation-prefill.json)（供对照，不能代替 UI 保存）
+- 任务列表：[`tasks.yaml`](../tasks.yaml)
+- 签到逻辑：[`src/tasks/viewturbo-checkin.js`](../src/tasks/viewturbo-checkin.js)
