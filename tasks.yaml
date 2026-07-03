@@ -1,0 +1,10 @@
+# 每日任务列表，按顺序执行
+tasks:
+  - id: viewturbo-checkin
+    name: ViewTurbo 每日签到
+    enabled: true
+    handler: viewturbo-checkin
+    config:
+      baseUrl: https://web.viewturbo.net
+      myPage: /zh/my/
+      loginPage: /zh/login/
