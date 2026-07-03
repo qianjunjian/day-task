@@ -66,17 +66,55 @@ async function findCheckinButton(page) {
   return page.getByRole('button', { name: /签到领|今日已领/ });
 }
 
-async function clickCheckin(page, log, email) {
-  const checkinBtn = await findCheckinButton(page);
-  await checkinBtn.waitFor({ state: 'visible', timeout: 15000 });
-
-  const btnText = await checkinBtn.innerText();
-  const isCheckedClass = await checkinBtn.evaluate((el) => el.classList.contains('is-checked')).catch(() => false);
-  if (isAlreadyCheckedIn(btnText, isCheckedClass)) {
-    log.info('今日已签到，跳过', { email, btnText });
+async function detectAlreadyCheckedInOnPage(page) {
+  const checkedBtn = page.locator('button.my-checkin-entry.is-checked');
+  if (await checkedBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+    const btnText = await checkedBtn.innerText();
     return { status: 'already_checked_in', message: btnText, alreadyCheckedIn: true };
   }
 
+  const anyCheckinBtn = page.locator('button.my-checkin-entry');
+  if (await anyCheckinBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+    const btnText = await anyCheckinBtn.innerText();
+    const isCheckedClass = await anyCheckinBtn.evaluate((el) => el.classList.contains('is-checked')).catch(() => false);
+    if (isAlreadyCheckedIn(btnText, isCheckedClass)) {
+      return { status: 'already_checked_in', message: btnText, alreadyCheckedIn: true };
+    }
+  }
+
+  const pageText = await page.locator('body').innerText().catch(() => '');
+  if (/今日已领|今日已签到|明日再来|已完成签到/.test(pageText)) {
+    const match = pageText.match(/今日已领[^\n]*/);
+    return { status: 'already_checked_in', message: match?.[0] || '页面显示今日已签到', alreadyCheckedIn: true };
+  }
+
+  return null;
+}
+
+async function clickCheckin(page, log, email) {
+  try {
+    const checkinBtn = await findCheckinButton(page);
+    await checkinBtn.waitFor({ state: 'visible', timeout: 15000 });
+
+    const btnText = await checkinBtn.innerText();
+    const isCheckedClass = await checkinBtn.evaluate((el) => el.classList.contains('is-checked')).catch(() => false);
+    if (isAlreadyCheckedIn(btnText, isCheckedClass)) {
+      log.info('今日已签到，跳过', { email, btnText });
+      return { status: 'already_checked_in', message: btnText, alreadyCheckedIn: true };
+    }
+
+    return await performCheckinClick(page, log, email, checkinBtn, btnText);
+  } catch (error) {
+    const detected = await detectAlreadyCheckedInOnPage(page);
+    if (detected) {
+      log.info('签到按钮未匹配，但页面显示今日已签到', { email, message: detected.message });
+      return detected;
+    }
+    throw error;
+  }
+}
+
+async function performCheckinClick(page, log, email, checkinBtn, btnText) {
   await checkinBtn.click();
   await page.waitForTimeout(2000);
 
