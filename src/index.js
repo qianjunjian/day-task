@@ -4,22 +4,19 @@ import { fileURLToPath } from 'url';
 import YAML from 'yaml';
 import dotenv from 'dotenv';
 import { createLogger } from './lib/logger.js';
-import { launchBrowser } from './lib/browser.js';
-import * as viewturboCheckin from './tasks/viewturbo-checkin.js';
 import * as newapiCheckin from './tasks/newapi-checkin.js';
 
 dotenv.config();
 
 const nodeMajor = Number(process.versions.node.split('.')[0]);
 if (nodeMajor < 18) {
-  console.error(`当前 Node.js 为 ${process.version}，Playwright 需要 Node.js 18+。请升级后重试（可参考 README）。`);
+  console.error(`当前 Node.js 为 ${process.version}，需要 Node.js 18+。请升级后重试（可参考 README）。`);
   process.exit(1);
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HANDLERS = {
-  'viewturbo-checkin': { module: viewturboCheckin, requiresBrowser: true },
-  'newapi-checkin': { module: newapiCheckin, requiresBrowser: false },
+  'newapi-checkin': newapiCheckin,
 };
 
 const STATUS_LABELS = {
@@ -38,7 +35,6 @@ function loadTasks() {
 
 function parseArgs(argv) {
   return {
-    headed: argv.includes('--headed'),
     only: argv.find((arg, i) => argv[i - 1] === '--only'),
   };
 }
@@ -55,7 +51,8 @@ function printAccountReport(taskName, result) {
   for (const account of result.accounts) {
     const label = getAccountLabel(account);
     const statusLabel = STATUS_LABELS[account.status] || account.status;
-    const checkedInNote = account.alreadyCheckedIn ? '（今日已签到）' : '';
+    const checkedInNote =
+      account.alreadyCheckedIn && account.status !== 'already_checked_in' ? '（今日已签到）' : '';
     console.log(`  - ${label}: ${statusLabel}${checkedInNote}${account.message ? ` — ${account.message}` : ''}`);
   }
 
@@ -105,56 +102,50 @@ export async function runAll(options = {}) {
   const filtered = options.only ? tasks.filter((t) => t.id === options.only) : tasks;
 
   if (filtered.length === 0) {
-    throw new Error('没有可执行的任务');
+    const msg = options.only
+      ? `未找到 id 为「${options.only}」的已启用任务`
+      : '没有可执行的任务（请检查 tasks.yaml 中是否有 enabled 的任务）';
+    throw new Error(msg);
   }
 
   log.info('开始执行任务', { count: filtered.length, tasks: filtered.map((t) => t.id) });
 
-  const needsBrowser = filtered.some((task) => HANDLERS[task.handler]?.requiresBrowser);
-  const browser = needsBrowser ? await launchBrowser({ headed: options.headed }) : null;
   const results = [];
 
-  try {
-    for (const task of filtered) {
-      const handlerEntry = HANDLERS[task.handler];
-      const handler = handlerEntry?.module;
+  for (const task of filtered) {
+    log.info(`执行任务: ${task.name}`, { id: task.id });
+
+    try {
+      const handler = HANDLERS[task.handler];
       if (!handler?.run) {
         throw new Error(`未找到任务处理器: ${task.handler}`);
       }
 
-      log.info(`执行任务: ${task.name}`, { id: task.id });
-
-      try {
-        const result = await handler.run({ browser, config: task.config || {} });
-        const taskOk = result.allOk !== false;
-        results.push({ id: task.id, name: task.name, ok: taskOk, result });
-        if (taskOk) {
-          log.info(`任务完成: ${task.name}`, {
-            total: result.total,
-            success: result.successCount,
-            alreadyCheckedIn: result.alreadyCheckedInCount,
-            failed: result.failedCount,
-          });
-        } else {
-          const labels = (result.notCheckedIn || []).map((a) => a.name || a.email).join(', ');
-          log.error(`任务未全部成功: ${task.name}`, {
-            notCheckedIn: labels,
-            failed: result.failedCount,
-          });
-        }
-      } catch (error) {
-        results.push({
-          id: task.id,
-          name: task.name,
-          ok: false,
-          error: error.message,
+      const result = await handler.run({ config: task.config || {} });
+      const taskOk = result.allOk !== false;
+      results.push({ id: task.id, name: task.name, ok: taskOk, result });
+      if (taskOk) {
+        log.info(`任务完成: ${task.name}`, {
+          total: result.total,
+          success: result.successCount,
+          alreadyCheckedIn: result.alreadyCheckedInCount,
+          failed: result.failedCount,
         });
-        log.error(`任务失败: ${task.name}`, { error: error.message });
+      } else {
+        const labels = (result.notCheckedIn || []).map((a) => a.name || a.email).join(', ');
+        log.error(`任务未全部成功: ${task.name}`, {
+          notCheckedIn: labels,
+          failed: result.failedCount,
+        });
       }
-    }
-  } finally {
-    if (browser) {
-      await browser.close();
+    } catch (error) {
+      results.push({
+        id: task.id,
+        name: task.name,
+        ok: false,
+        error: error.message,
+      });
+      log.error(`任务失败: ${task.name}`, { error: error.message });
     }
   }
 
@@ -164,7 +155,9 @@ export async function runAll(options = {}) {
   if (failed.length > 0) {
     const details = failed.map((f) => {
       const notCheckedIn = f.result?.notCheckedIn?.map((a) => a.name || a.email).join(', ');
-      return notCheckedIn ? `${f.id}（未签到: ${notCheckedIn}）` : f.id;
+      if (notCheckedIn) return `${f.id}（未签到: ${notCheckedIn}）`;
+      if (f.error) return `${f.id}（${f.error}）`;
+      return f.id;
     });
     throw new Error(`${failed.length} 个任务未全部成功: ${details.join('; ')}`);
   }
@@ -177,7 +170,7 @@ const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === path.r
 if (isDirectRun) {
   const args = parseArgs(process.argv.slice(2));
   runAll(args)
-    .then((results) => {
+    .then(() => {
       console.log('\n全部任务执行完成。');
       process.exit(0);
     })

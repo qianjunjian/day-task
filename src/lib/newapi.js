@@ -3,7 +3,7 @@ const DEFAULT_SIGN_IN_PATH = '/api/user/sign_in';
 const DEFAULT_API_USER_HEADER = 'new-api-user';
 const REQUEST_TIMEOUT_MS = 30000;
 
-const ALREADY_CHECKED_PATTERN = /已签到|今日已签|already|signed|重复|明日再来/i;
+const ALREADY_CHECKED_PATTERN = /已签到|今日已签|already\s*signed|signed\s*in|重复|明日再来/i;
 
 /**
  * 将站点 URL 规范化为 origin（去掉路径、末尾斜杠）
@@ -199,6 +199,16 @@ export async function performCheckin(config) {
       username: userInfo.username,
       userId: userInfo.userId,
       reward: data?.data,
+    };
+  }
+
+  if (data?.success === false) {
+    return {
+      status: 'failed',
+      message: message || '签到失败',
+      alreadyCheckedIn: false,
+      username: userInfo.username,
+      userId: userInfo.userId,
     };
   }
 

@@ -9,12 +9,3 @@ tasks:
       signInPath: /api/user/sign_in
       userInfoPath: /api/user/self
       apiUserHeader: new-api-user
-
-  - id: viewturbo-checkin
-    name: ViewTurbo 每日签到
-    enabled: false
-    handler: viewturbo-checkin
-    config:
-      baseUrl: https://web.viewturbo.net
-      myPage: /zh/my/
-      loginPage: /zh/login/
