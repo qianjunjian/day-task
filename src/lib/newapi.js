@@ -1,5 +1,5 @@
 const DEFAULT_USER_INFO_PATH = '/api/user/self';
-const DEFAULT_SIGN_IN_PATH = '/api/user/sign_in';
+const DEFAULT_SIGN_IN_PATH = '/api/user/checkin';
 const DEFAULT_API_USER_HEADER = 'new-api-user';
 const REQUEST_TIMEOUT_MS = 30000;
 
@@ -26,14 +26,23 @@ function buildUrl(baseUrl, apiPath) {
   return `${normalized}${path}`;
 }
 
-function buildHeaders(session, userId, apiUserHeader) {
+function buildHeaders(session, userId, apiUserHeader, options = {}) {
+  const { baseUrl, withJsonContentType = false } = options;
   const headers = {
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
+    Accept: 'application/json, text/plain, */*',
     Cookie: `session=${session}`,
     'User-Agent':
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
   };
+
+  if (withJsonContentType) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  if (baseUrl) {
+    headers.Origin = baseUrl;
+    headers.Referer = `${baseUrl}/console/personal`;
+  }
 
   if (userId != null && userId !== '') {
     headers[apiUserHeader] = String(userId);
@@ -114,24 +123,32 @@ function isAlreadyCheckedIn(data, message) {
 
 /**
  * 获取用户信息并校验 session
- * @param {{ baseUrl: string, session: string, userInfoPath?: string, apiUserHeader?: string }} params
+ * @param {{ baseUrl: string, session: string, userId: string|number, userInfoPath?: string, apiUserHeader?: string }} params
  */
 export async function fetchUserInfo(params) {
   const {
     baseUrl,
     session,
+    userId,
     userInfoPath = DEFAULT_USER_INFO_PATH,
     apiUserHeader = DEFAULT_API_USER_HEADER,
   } = params;
 
+  if (userId == null || userId === '') {
+    throw new Error(
+      '缺少 userId。请在配置中添加 userId：浏览器 F12 → Network → 刷新页面 → 点开 /api/user/self → 查看请求头 new-api-user',
+    );
+  }
+
   const url = buildUrl(baseUrl, userInfoPath);
   const { response, data } = await fetchJson(url, {
     method: 'GET',
-    headers: buildHeaders(session, null, apiUserHeader),
+    headers: buildHeaders(session, userId, apiUserHeader, { baseUrl }),
   });
 
   if (response.status === 401 || response.status === 403) {
-    throw new Error('Session 已过期，请重新获取 Cookie');
+    const msg = extractMessage(data, '');
+    throw new Error(msg || 'Session 已过期或无效，请重新获取 Cookie');
   }
 
   if (!response.ok) {
@@ -142,49 +159,47 @@ export async function fetchUserInfo(params) {
     throw new Error(extractMessage(data, '获取用户信息失败'));
   }
 
-  const userId = extractUserId(data);
-  if (userId == null) {
-    throw new Error('无法从用户信息接口解析用户 ID');
-  }
-
+  const resolvedUserId = extractUserId(data) ?? userId;
   const username =
     data?.data?.username ||
     data?.data?.display_name ||
     data?.data?.name ||
     data?.data?.email ||
-    String(userId);
+    String(resolvedUserId);
 
-  return { userId, username, raw: data };
+  return { userId: resolvedUserId, username, raw: data };
 }
 
 /**
  * 执行 New API 签到
- * @param {{ baseUrl: string, session: string, signInPath?: string, userInfoPath?: string, apiUserHeader?: string }} config
+ * @param {{ baseUrl: string, session: string, userId: string|number, signInPath?: string, userInfoPath?: string, apiUserHeader?: string }} config
  */
 export async function performCheckin(config) {
   const {
     baseUrl,
     session,
+    userId,
     signInPath = DEFAULT_SIGN_IN_PATH,
     userInfoPath = DEFAULT_USER_INFO_PATH,
     apiUserHeader = DEFAULT_API_USER_HEADER,
   } = config;
 
-  const userInfo = await fetchUserInfo({ baseUrl, session, userInfoPath, apiUserHeader });
+  const userInfo = await fetchUserInfo({ baseUrl, session, userId, userInfoPath, apiUserHeader });
   const url = buildUrl(baseUrl, signInPath);
 
+  // 与网页一致：POST /api/user/checkin，无请求体
   const { response, data } = await fetchJson(url, {
     method: 'POST',
-    headers: buildHeaders(session, userInfo.userId, apiUserHeader),
-    body: JSON.stringify({}),
+    headers: buildHeaders(session, userInfo.userId, apiUserHeader, { baseUrl }),
   });
 
   const message = extractMessage(data, '');
 
   if (response.status === 401 || response.status === 403) {
+    const msg = extractMessage(data, '');
     return {
       status: 'failed',
-      message: 'Session 已过期，请重新获取 Cookie',
+      message: msg || 'Session 已过期或无效，请重新获取 Cookie',
       alreadyCheckedIn: false,
       username: userInfo.username,
       userId: userInfo.userId,

@@ -73,6 +73,7 @@ export async function run({ config }) {
       const checkinResult = await performCheckin({
         baseUrl,
         session: account.session,
+        userId: account.userId,
         signInPath: config.signInPath,
         userInfoPath: config.userInfoPath,
         apiUserHeader: config.apiUserHeader,

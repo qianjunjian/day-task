@@ -6,6 +6,6 @@ tasks:
     handler: newapi-checkin
     config:
       baseUrl: https://api.7r.fit
-      signInPath: /api/user/sign_in
+      signInPath: /api/user/checkin
       userInfoPath: /api/user/self
       apiUserHeader: new-api-user
