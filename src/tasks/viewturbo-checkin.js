@@ -54,7 +54,7 @@ async function ensureLoggedIn(page, config, account, log) {
   }
 }
 
-const CHECKED_TEXT_PATTERN = /已签到|明日再来|已完成/;
+const CHECKED_TEXT_PATTERN = /已签到|明日再来|已完成|今日已领/;
 
 async function waitForCheckinArea(page) {
   await page.locator('.my-checkin-entry').first().waitFor({ state: 'visible', timeout: 15000 });
@@ -66,20 +66,14 @@ async function waitForCheckinArea(page) {
 async function detectAlreadyCheckedIn(page) {
   await waitForCheckinArea(page);
 
-  const checkedEntry = page.locator('.my-checkin-entry.is-checked').first();
-  const isCheckedClass = await checkedEntry.isVisible().catch(() => false);
-
   const entry = page.locator('.my-checkin-entry').first();
+  const isCheckedClass = await page.locator('.my-checkin-entry.is-checked').first().isVisible().catch(() => false);
   const entryText = (await entry.innerText().catch(() => '')).trim();
 
-  const checkinBtn = page.getByRole('button', { name: /签到领/ });
-  const btnVisible = await checkinBtn.isVisible().catch(() => false);
-  const btnText = btnVisible ? (await checkinBtn.innerText().catch(() => '')).trim() : '';
-
-  const hasCheckedText = CHECKED_TEXT_PATTERN.test(entryText) || CHECKED_TEXT_PATTERN.test(btnText);
+  const hasCheckedText = CHECKED_TEXT_PATTERN.test(entryText);
   const alreadyCheckedIn = isCheckedClass || hasCheckedText;
 
-  return { alreadyCheckedIn, isCheckedClass, entryText, btnText };
+  return { alreadyCheckedIn, isCheckedClass, entryText, btnText: entryText };
 }
 
 async function clickCheckin(page, log, email) {
@@ -96,11 +90,11 @@ async function clickCheckin(page, log, email) {
     return { status: 'already_checked_in', message, alreadyCheckedIn: true };
   }
 
-  const checkinBtn = page.getByRole('button', { name: /签到领/ });
-  await checkinBtn.waitFor({ state: 'visible', timeout: 15000 });
+  const checkinEntry = page.locator('.my-checkin-entry:not(.is-checked)').first();
+  await checkinEntry.waitFor({ state: 'visible', timeout: 15000 });
 
-  const btnText = before.btnText || (await checkinBtn.innerText());
-  await checkinBtn.click();
+  const btnText = before.entryText || (await checkinEntry.innerText());
+  await checkinEntry.click();
   await page.waitForTimeout(2000);
 
   const after = await detectAlreadyCheckedIn(page);
@@ -117,7 +111,8 @@ async function clickCheckin(page, log, email) {
     return { status: 'success', message, trafficText, alreadyCheckedIn: false };
   }
 
-  const afterText = after.btnText || (await checkinBtn.innerText().catch(() => btnText));
+  const afterEntry = page.locator('.my-checkin-entry').first();
+  const afterText = after.btnText || (await afterEntry.innerText().catch(() => btnText));
   const message = `签到未完成（点击后未出现已签到状态）${afterText ? ` — ${afterText}` : ''}`;
   log.error('签到失败', { email, before: btnText, after: afterText, trafficText });
   return { status: 'failed', message, trafficText, alreadyCheckedIn: false };
