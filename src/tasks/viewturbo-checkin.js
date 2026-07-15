@@ -54,7 +54,7 @@ async function ensureLoggedIn(page, config, account, log) {
   }
 }
 
-const CHECKED_TEXT_PATTERN = /已签到|明日再来|已完成/;
+const CHECKED_TEXT_PATTERN = /已签到|明日再来|已完成|今日已领/;
 
 async function waitForCheckinArea(page) {
   await page.locator('.my-checkin-entry').first().waitFor({ state: 'visible', timeout: 15000 });
@@ -72,7 +72,7 @@ async function detectAlreadyCheckedIn(page) {
   const entry = page.locator('.my-checkin-entry').first();
   const entryText = (await entry.innerText().catch(() => '')).trim();
 
-  const checkinBtn = page.getByRole('button', { name: /签到领/ });
+  const checkinBtn = page.locator('.my-checkin-entry:not(.is-checked)').first();
   const btnVisible = await checkinBtn.isVisible().catch(() => false);
   const btnText = btnVisible ? (await checkinBtn.innerText().catch(() => '')).trim() : '';
 
@@ -96,7 +96,7 @@ async function clickCheckin(page, log, email) {
     return { status: 'already_checked_in', message, alreadyCheckedIn: true };
   }
 
-  const checkinBtn = page.getByRole('button', { name: /签到领/ });
+  const checkinBtn = page.locator('.my-checkin-entry:not(.is-checked)').first();
   await checkinBtn.waitFor({ state: 'visible', timeout: 15000 });
 
   const btnText = before.btnText || (await checkinBtn.innerText());
