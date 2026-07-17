@@ -54,10 +54,14 @@ async function ensureLoggedIn(page, config, account, log) {
   }
 }
 
-const CHECKED_TEXT_PATTERN = /已签到|明日再来|已完成/;
+const CHECKED_TEXT_PATTERN = /已签到|明日再来|已完成|今日已领/;
+
+function getCheckinEntry(page) {
+  return page.locator('button.my-checkin-entry, .my-checkin-entry').first();
+}
 
 async function waitForCheckinArea(page) {
-  await page.locator('.my-checkin-entry').first().waitFor({ state: 'visible', timeout: 15000 });
+  await getCheckinEntry(page).waitFor({ state: 'visible', timeout: 15000 });
 }
 
 /**
@@ -66,20 +70,14 @@ async function waitForCheckinArea(page) {
 async function detectAlreadyCheckedIn(page) {
   await waitForCheckinArea(page);
 
-  const checkedEntry = page.locator('.my-checkin-entry.is-checked').first();
-  const isCheckedClass = await checkedEntry.isVisible().catch(() => false);
-
-  const entry = page.locator('.my-checkin-entry').first();
+  const entry = getCheckinEntry(page);
+  const isCheckedClass = await entry.evaluate((el) => el.classList.contains('is-checked')).catch(() => false);
   const entryText = (await entry.innerText().catch(() => '')).trim();
 
-  const checkinBtn = page.getByRole('button', { name: /签到领/ });
-  const btnVisible = await checkinBtn.isVisible().catch(() => false);
-  const btnText = btnVisible ? (await checkinBtn.innerText().catch(() => '')).trim() : '';
-
-  const hasCheckedText = CHECKED_TEXT_PATTERN.test(entryText) || CHECKED_TEXT_PATTERN.test(btnText);
+  const hasCheckedText = CHECKED_TEXT_PATTERN.test(entryText);
   const alreadyCheckedIn = isCheckedClass || hasCheckedText;
 
-  return { alreadyCheckedIn, isCheckedClass, entryText, btnText };
+  return { alreadyCheckedIn, isCheckedClass, entryText, btnText: entryText };
 }
 
 async function clickCheckin(page, log, email) {
@@ -96,10 +94,10 @@ async function clickCheckin(page, log, email) {
     return { status: 'already_checked_in', message, alreadyCheckedIn: true };
   }
 
-  const checkinBtn = page.getByRole('button', { name: /签到领/ });
+  const checkinBtn = getCheckinEntry(page);
   await checkinBtn.waitFor({ state: 'visible', timeout: 15000 });
 
-  const btnText = before.btnText || (await checkinBtn.innerText());
+  const btnText = before.btnText || (await checkinBtn.innerText().catch(() => ''));
   await checkinBtn.click();
   await page.waitForTimeout(2000);
 
